@@ -1,0 +1,8 @@
+- Journal/Blog checkpoints throughout project
+    - Intro + portfolio allocation strategies
+        - What is portfolio allocation strategy?
+        - Explanations of the different strategies
+    - Return
+
+
+- If chosen end date is at least one year before present, generate a graph to show expected return output compared to actual return output
