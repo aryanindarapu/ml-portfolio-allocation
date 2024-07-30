@@ -71,7 +71,6 @@ def get_ticker_data(tickers: list, start: str, end: str) -> pd.DataFrame:
     # TODO: add date range as argument
     # get_ticker_data_visual(tickers)
     data = yf.download(tickers, start=start, end=end)['Adj Close']
-    data.dropna(inplace=True)
     data = data.pct_change().dropna()
     data.to_csv("data/data.csv")
     return data
@@ -110,8 +109,8 @@ def plot_returns(tickers, predicted_returns, actual_returns, portfolio_predicted
     # Plot individual stock returns
     for ticker in tickers:
         plt.figure(figsize=(12, 8))
-        plt.plot(predicted_returns[ticker].index, (predicted_returns[ticker] + 1).cumprod(), label=f'Predicted {ticker}')
-        plt.plot(actual_returns.index, (actual_returns + 1).cumprod(), label=f'Actual {ticker}', linestyle='--')
+        # plt.plot(predicted_returns[ticker].index, (predicted_returns[ticker] + 1).cumprod(), label=f'Predicted {ticker}')
+        plt.plot(actual_returns[ticker].index, (actual_returns[ticker] + 1).cumprod(), label=f'Actual {ticker}', linestyle='--')
         plt.xlabel('Date')
         plt.ylabel('Cumulative Return')
         plt.title(f'Predicted vs Actual Cumulative Returns for {ticker}')
@@ -119,9 +118,10 @@ def plot_returns(tickers, predicted_returns, actual_returns, portfolio_predicted
         plt.grid(True)
         # plt.show()
         plt.savefig(f"images/{ticker}_returns.png")
+        plt.clf()
     
     # Plot portfolio returns
-    plt.figure(figsize=(12, 8))
+    # plt.figure(figsize=(12, 8))
     plt.plot(portfolio_predicted_returns.index, (portfolio_predicted_returns + 1).cumprod(), label='Predicted Portfolio')
     plt.plot(portfolio_actual_returns.index, (portfolio_actual_returns + 1).cumprod(), label='Actual Portfolio', linestyle='--')
     

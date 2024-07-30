@@ -7,8 +7,8 @@ import statsmodels.api as sm
 from statsmodels.api import OLS
 
 
-def portfolio_return(outputs: pd.Series, expected_returns: pd.Series):
-    return outputs * expected_returns, np.dot(outputs, expected_returns)
+# def portfolio_return(outputs: pd.Series, expected_returns: pd.Series):
+#     return outputs * expected_returns, np.dot(outputs, expected_returns)
 
 def actual_returns(returns: pd.DataFrame, weights: pd.Series):
     weighted_returns = returns.mul(weights, axis=1)
@@ -24,21 +24,21 @@ def portfolio_return2(weights: pd.Series, predicted_returns: pd.DataFrame):
     return portfolio_predicted_returns
 
 # CAPM Model
-def capm_model(data: pd.DataFrame, market_data: pd.DataFrame):
-    market_returns = market_data.pct_change().dropna()
-    data_returns = data.pct_change().dropna()
+# def capm_model(data: pd.DataFrame, market_data: pd.DataFrame):
+#     market_returns = market_data.pct_change().dropna()
+#     data_returns = data.pct_change().dropna()
     
-    betas, alphas = dict(), dict()
-    for ticker in data.columns:
-        b, a = np.polyfit(market_returns, data_returns[ticker], 1)
-        plt.plot(market_returns, b*market_returns + a, color='r')
-        betas[ticker] = b
-        alphas[ticker] = a
+#     betas, alphas = dict(), dict()
+#     for ticker in data.columns:
+#         b, a = np.polyfit(market_returns, data_returns[ticker], 1)
+#         plt.plot(market_returns, b*market_returns + a, color='r')
+#         betas[ticker] = b
+#         alphas[ticker] = a
     
-    plt.show()
-    return betas, alphas
+#     plt.show()
+#     return betas, alphas
 
-def compute_capm_returns(historical_data: pd.DataFrame, test_data: pd.DataFrame, end_date: str):
+# def compute_capm_returns(historical_data: pd.DataFrame, test_data: pd.DataFrame, end_date: str):
     sp500_data = get_sp500_data()
     betas, alphas = capm_model(historical_data, sp500_data)
     _, rf = get_factors(end_date, "CAPM")
@@ -50,25 +50,25 @@ def compute_capm_returns(historical_data: pd.DataFrame, test_data: pd.DataFrame,
         
     return pd.Series(capm_returns)
 
-def run_model(data: pd.DataFrame, model: str):
-    factors, rf = get_factors(model)
-    factors = factors.loc[data.index]
-    rf = rf.loc[data.index]
+# def run_model(data: pd.DataFrame, model: str):
+#     factors, rf = get_factors(model)
+#     factors = factors.loc[data.index]
+#     rf = rf.loc[data.index]
     
-    results = {}
-    predicted_returns = {}
-    cumulative_predicted_returns = {}
-    for ticker in data.columns:
-        returns = data[ticker]
-        X = sm.add_constant(factors)
-        model = OLS(returns - rf, X).fit()
-        predicted_return = model.predict(X) + rf
+#     results = {}
+#     predicted_returns = {}
+#     cumulative_predicted_returns = {}
+#     for ticker in data.columns:
+#         returns = data[ticker]
+#         X = sm.add_constant(factors)
+#         model = OLS(returns, X).fit()
+#         predicted_return = model.predict(X)
         
-        results[ticker] = model.summary()
-        predicted_returns[ticker] = predicted_return
-        cumulative_predicted_returns[ticker] = (predicted_return + 1).cumprod().iloc[-1] - 1
+#         results[ticker] = model.summary()
+#         predicted_returns[ticker] = predicted_return
+#         cumulative_predicted_returns[ticker] = (predicted_return + 1).cumprod().iloc[-1] - 1
         
-    return results, pd.DataFrame(predicted_returns), pd.Series(cumulative_predicted_returns)
+#     return results, pd.DataFrame(predicted_returns), pd.Series(cumulative_predicted_returns)
 
 # def capm_model(data: pd.DataFrame):
 #     factors, rf = get_factors("CAPM")

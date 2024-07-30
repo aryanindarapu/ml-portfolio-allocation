@@ -19,8 +19,10 @@ if __name__ == "__main__":
     if args.data:
         data = pd.read_csv(args.data)
     else:
-        tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'CLF', 'META', 'TSLA', 'NVDA']
-        data = get_ticker_data(tickers, start='2015-01-01', end='2023-12-31')
+        # tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'CLF', 'META', 'TSLA', 'NVDA']
+        tickers = ['AAPL', 'MSFT']
+        # data = get_ticker_data(tickers, start='2020-01-01', end='2023-12-31')
+        data = get_ticker_data(tickers, start='2023-11-01', end='2023-12-31')
         
     if args.initial_amount:
         initial_amount = float(args.initial_amount)
@@ -33,27 +35,23 @@ if __name__ == "__main__":
     # output, weights = rpp(data, initial_amount)
     print("Portfolio Allocation:\n", output.sort_values(ascending=False))  
     print("\nIVP Weights:\n", weights.sort_values(ascending=False))
-    
-    # Compute expected return
-    # expected_returns = data.mean()
-    # expected_return = np.dot(weights, expected_returns)
-    # print("\nExpected Return:", expected_return)
-    
+
     # historical_data = data.loc[:'2023-01-01']
     # test_data = data.loc['2023-01-01':]
 
     # Compute actual portfolio returns
-    cumulative_return, actual_return = actual_returns(data, weights)
-    print("\nActual Portfolio Return:", actual_return)
+    cumulative_portfolio_return, actual_portfolio_return = actual_returns(data, weights)
+    print("\nActual Portfolio Return:", actual_portfolio_return)
+    print("Total Cumulative Return:", cumulative_portfolio_return)
     
     # Compute expected returns using selected model
     # results, projected_returns, projected_returns_cumulative = capm_model(data)
     # results, projected_returns, projected_returns_cumulative = ff3_model(data)
     # results, projected_returns, projected_returns_cumulative = ff5_model(data)
-    results, projected_returns, projected_returns_cumulative = run_model(data)
+    results, projected_returns, projected_returns_cumulative = run_model(data, model="CAPM")
     # expected_return, total_expected_return = portfolio_return(output, projected_returns_cumulative)
     predicted_return = portfolio_return2(weights, projected_returns)
     print("\nExpected Return:", predicted_return)
     
     
-    plot_returns(tickers, projected_returns, actual_return, predicted_return, actual_return)
+    plot_returns(tickers, projected_returns, data, predicted_return, actual_portfolio_return)

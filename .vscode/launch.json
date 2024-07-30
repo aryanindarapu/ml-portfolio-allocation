@@ -10,6 +10,13 @@
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: Test File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "returns2.py",
+            "console": "integratedTerminal"
         }
     ]
 }
