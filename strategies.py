@@ -2,12 +2,14 @@ import pandas as pd
 import numpy as np
 from math import sqrt
 from scipy.optimize import minimize
+# import pdb
 
 
 """ These methods are simple heuristics and don't consider correlation between assets.
 """
 # Equal Weight Portfolio
 def ewp(data: pd.DataFrame, initial_amount: float):
+    # pdb.set_trace()
     # weights = np.array([1 / data.shape[1]] * data.shape[1])
     weights = [1 / data.shape[1]] * data.shape[1]
     weights = pd.Series(weights, index=data.columns)
