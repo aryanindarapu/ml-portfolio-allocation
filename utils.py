@@ -1,8 +1,9 @@
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
+import numpy as np
 
-from strategies import ewp, mvp, ivp, rpp
+from strategies import ewp, mvp, ivp, rpp, gmvp, nrbp, srp
 
 """ Helper Functions"""
 
@@ -16,18 +17,25 @@ def select_factor_list(t):
     
     raise ValueError("Invalid factor model. Please choose from 'capm', 'ff3', or 'ff5'.")
 
-def get_portfolio_weights(tickers, strategy, initial_amount, start_date, end_date, **kwargs):
+def get_portfolio_weights(tickers, strategy, start_date, end_date, **kwargs):
     data = yf.download(tickers, start=start_date, end=end_date)['Adj Close']
     data = data.pct_change().dropna()
-    print(data)
+    # print(data)
     if strategy == "ewp":
-        return ewp(data, initial_amount)
+        return ewp(data)
     elif strategy == "mvp":
-        return mvp(data, initial_amount, kwargs.get("l", 1))
+        return mvp(data, kwargs.get("l", 1))
     elif strategy == "ivp":
-        return ivp(data, initial_amount)
+        return ivp(data)
     elif strategy == "rpp":
-        return rpp(data, initial_amount)
+        return rpp(data)
+    elif strategy == "gmvp":
+        return gmvp(data)
+    elif strategy == "nrbp":
+        return nrbp(data)
+    elif strategy == "srp":
+        return srp(data, kwargs.get("rf", 0.02))
+
     
     raise ValueError("Invalid strategy. Please choose from 'ewp', 'mvp', 'ivp', or 'rpp'.")
 
@@ -73,13 +81,16 @@ def prepare_features(data, lag=12):
 
 """ Visualization Functions """
 def visualize_returns(historical_returns, forecasted_returns, initial_investment):
+    # add last point of historical returns to forecasted returns
+    forecasted_returns = [historical_returns.iloc[-1]] + forecasted_returns
+    print(forecasted_returns)
     plt.figure(figsize=(10, 5))
     
     # Plot historical returns (percentage change)
     historical_returns.plot(label='Historical Returns (Percentage Change)', color='blue')
     
     # Create a DataFrame for forecasted returns
-    forecast_index = pd.period_range(start=historical_returns.index[-1] + 1, periods=12, freq='M')
+    forecast_index = pd.period_range(start=historical_returns.index[-1] + 1, periods=13, freq='M')
     forecasted_returns_df = pd.Series(forecasted_returns, index=forecast_index, name='Forecasted Returns')
     
     # Plot forecasted returns (percentage change)
@@ -108,3 +119,4 @@ def visualize_returns(historical_returns, forecasted_returns, initial_investment
     plt.ylabel('Portfolio Value (USD)')
     plt.legend()
     plt.show()
+    
