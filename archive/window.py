@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import pandas as pd
 
-from utils import get_stock_tickers, get_ticker_data, get_risk_contribution
-from strategies import gmvp, mvp, ewp, ivp, rpp
+from quant.utils import get_stock_tickers, get_ticker_data, get_risk_contribution
+from quant.strategies import gmvp, mvp, ewp, ivp, rpp
 
 class Window:
     def __init__(self, initial_amount=10000.) -> None:
