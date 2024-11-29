@@ -12,3 +12,6 @@ Additionally, the following asset return models are implemented:
 - CAPM Model
 - Fama-French Three Factor Model
 - Fama-French Five Factor Model
+
+### Update: Nov 29, 2024
+- The project now has a React frontend and FastAPI backend.
