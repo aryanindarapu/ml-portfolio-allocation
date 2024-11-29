@@ -4,8 +4,8 @@ from matplotlib import pyplot as plt
 import argparse
 import numpy as np
 
-from utils import get_ticker_data, plot_returns
-from strategies import ewp, ivp, gmvp, rpp
+from quant.utils import get_ticker_data, plot_returns
+from quant.strategies import ewp, ivp, gmvp, rpp
 from returns import run_model, actual_returns, portfolio_return2
 
 if __name__ == "__main__":

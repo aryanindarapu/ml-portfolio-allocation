@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.bar-chart-container {
+  width: 75%;
+  margin: 0 auto; /* Centers the container horizontally */
+}
+
+.bar-chart-container canvas {
+  display: block; /* Prevents the canvas from overflowing its container */
+  max-width: 100%; /* Ensures it scales correctly within the container */
+  height: auto; /* Maintains aspect ratio */
+}
+
+.plots-container {
+  display: flex;
+  justify-content: space-between; /* Adjusts spacing between images */
+  gap: 20px; /* Adds space between images */
+}
+
+.plots-container img {
+  flex: 1; /* Ensures images take equal width */
+  max-width: 48%; /* Prevents images from exceeding half the container's width */
+  height: auto; /* Maintains aspect ratio */
+}
+
+@media (max-width: 768px) {
+  .plots-container {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .plots-container img {
+    max-width: 80%;
+    margin-bottom: 20px;
+  }
+}

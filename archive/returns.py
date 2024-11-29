@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from utils import get_sp500_data, get_factors
+from quant.utils import get_sp500_data, get_factors
 
 from matplotlib import pyplot as plt
 import statsmodels.api as sm
