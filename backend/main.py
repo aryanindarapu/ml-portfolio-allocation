@@ -9,7 +9,11 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+import yfinance as yf
+import numpy as np
 
+from quant.strategies import mvp, rpp, portfolio_optimization
 from quant.utils import get_factors, get_monthly_returns, get_stock_details, get_portfolio_weights, select_factor_list, visualize_returns
 from quant.helpers import run_regression, compute_annual_return, get_insights, forecast_factors, compute_monthly_expected_returns
 
@@ -33,7 +37,6 @@ class DataRequest(BaseModel):
     initial_amount: float
     tickers: List[str]
     strategy: str
-    model_type: str
     risk_level: str
 
 @app.post("/process-data")
@@ -62,94 +65,91 @@ async def get_tickers():
     tickers.sort()
     return tickers
 
-# def portfolio_allocation(tickers, start_date, end_date, strategy):
-    
-#     return weights, factors_subset
+def risk_adjusted_portfolio(tickers, start_date, end_date, target_vol):
+    data = yf.download(tickers, start=start_date, end=end_date)['Adj Close']
+    returns = np.log(data / data.shift(1)).dropna()
+    mean_returns = returns.mean() * 252
+    cov_matrix = returns.cov() * 252
 
-# def factor_model(factors_subset, model_type):
-    
-#     return 
+    def portfolio_performance(weights, mean_returns, cov_matrix):
+        returns = np.sum(mean_returns * weights)
+        std_dev = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+        return returns, std_dev
 
+    def negative_sharpe_ratio(weights, mean_returns, cov_matrix, risk_free_rate=0.01):
+        p_returns, p_std_dev = portfolio_performance(weights, mean_returns, cov_matrix)
+        return -(p_returns - risk_free_rate) / p_std_dev
+
+    # Constraints: sum of weights is 1, weights are non-negative
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    bounds = tuple((0, 1) for _ in range(len(tickers)))
+
+    # Initial guess (equal distribution)
+    initial_weights = np.array(len(tickers) * [1. / len(tickers)])
+
+    # Function to target a specific portfolio volatility
+    def target_volatility(weights, mean_returns, cov_matrix, target_vol):
+        _, p_std_dev = portfolio_performance(weights, mean_returns, cov_matrix)
+        return (p_std_dev - target_vol)**2
+
+    # Perform optimization to achieve target volatility
+    optimized_vol = minimize(target_volatility, initial_weights, args=(mean_returns, cov_matrix, target_vol),
+                            method='SLSQP', bounds=bounds, constraints=constraints)
+
+    optimal_weights_vol = optimized_vol.x
+    expected_return_vol, expected_volatility_vol = portfolio_performance(optimal_weights_vol, mean_returns, cov_matrix)
+
+    print("\nOptimal Weights for Target Volatility:", optimal_weights_vol)
+    print("Expected Annual Return:", expected_return_vol)
+    print("Expected Volatility:", expected_volatility_vol)
+    
+    # weights_dict = {k: v for k, v in zip(tickers, optimal_weights_vol)}
+    # return optimal_weights_vol
+
+    # Function to simulate random portfolios and plot the efficient frontier
+    def efficient_frontier(mean_returns, cov_matrix, num_portfolios=10000, risk_free_rate=0.01):
+        results = np.zeros((3, num_portfolios))
+        weights_record = []
+        for i in range(num_portfolios):
+            weights = np.random.random(len(tickers))
+            weights /= np.sum(weights)
+            weights_record.append(weights)
+            p_return, p_std_dev = portfolio_performance(weights, mean_returns, cov_matrix)
+            results[0,i] = p_std_dev
+            results[1,i] = p_return
+            results[2,i] = (p_return - risk_free_rate) / p_std_dev
+        return results, weights_record
+
+    # Generate and plot the efficient frontier
+    results, weights_record = efficient_frontier(mean_returns, cov_matrix)
+    
+    return optimal_weights_vol, results
     
 @app.post('/portfolio-analysis')
 async def run_portfolio_analysis(request: DataRequest):
-    tickers, start_date, end_date, initial_amount, strategy, model_type, risk_level = \
-        request.tickers, request.start_date, request.end_date, request.initial_amount, request.strategy, request.model_type, request.risk_level
+    tickers, start_date, end_date, initial_amount, strategy, risk_level = \
+        request.tickers, request.start_date, request.end_date, request.initial_amount, request.strategy, request.risk_level
     
-    portfolio = get_monthly_returns(tickers, start_date, end_date)
-    factors_monthly = get_factors()
-    factors_subset = factors_monthly[factors_monthly.index.isin(portfolio.index)].copy()
-    weights = get_portfolio_weights(tickers, strategy=strategy, start_date=start_date, 
-                                    end_date=end_date, l=5, rf=factors_subset["RF"].mean())
-    portfolio_return = (portfolio * weights).sum(axis=1)
-    factors_subset["Excess Returns"] = portfolio_return - factors_subset["RF"]
+    # TODO: adjust the stock tickers based on risk level
+    # TODO: keep track of portfolio over time and assess performance (server + db, etc.)
+    l = None
+    if risk_level == "very_low":
+        l = 0.15
+    elif risk_level == "low":
+        l = 0.25
+    elif risk_level == "medium":
+        l = 0.31
+    elif risk_level == "high":
+        l = 0.375
+    elif risk_level == "very_high":
+        l = 0.45
     
-    # =======================================================================================
+    weights, frontier = risk_adjusted_portfolio(tickers, start_date, end_date, l)
+    weights_dict = {k: v * initial_amount for k, v in zip(tickers, weights)}
     
-    factors_monthly = get_factors()
-    factor_list = select_factor_list(model_type)
-    model = run_regression(factors_subset, factor_list)
-
-    forecasted_factors = forecast_factors(factors_monthly, model_type=model_type, steps=12)
-    monthly_expected_returns = compute_monthly_expected_returns(model, forecasted_factors)
-    annual_expected_return = compute_annual_return(monthly_expected_returns)
-
-    # print(monthly_expected_returns)
-    print("Expected Annual Return for the Next 12 Months: {:.2f}%".format(annual_expected_return * 100))
-    portfolio_return = (portfolio * weights).sum(axis=1)
+    output = {
+        "weights": weights_dict,
+        "frontier": frontier.tolist()
+    }
     
-    # =======================================================================================
-    
-    historical_returns = portfolio_return
-    forecasted_returns = monthly_expected_returns
-    
-    # add last point of historical returns to forecasted returns
-    forecasted_returns = [historical_returns.iloc[-1]] + forecasted_returns
-
-    # Create a DataFrame for forecasted returns
-    forecast_index = pd.period_range(start=historical_returns.index[-1] + 1, periods=13, freq='M')
-    forecasted_returns_df = pd.Series(forecasted_returns, index=forecast_index, name='Forecasted Returns')
-        
-    # Calculate portfolio value over time
-    historical_portfolio_value = (1 + historical_returns / 100).cumprod() * initial_amount
-    forecasted_portfolio_value = (1 + forecasted_returns_df / 100).cumprod() * historical_portfolio_value.iloc[-1]
-    
-     # Directory to save plots
-    plot_dir = 'plots'
-    os.makedirs(plot_dir, exist_ok=True)
-
-    # Plot 1: Historical and Forecasted Portfolio Returns
-    plt.figure(figsize=(10, 5))
-    historical_returns.plot(label='Historical Returns (Percentage Change)', color='blue')
-    forecasted_returns_df.plot(label='Forecasted Returns (Percentage Change)', color='red', linestyle='--')
-    plt.title('Historical and Forecasted Portfolio Returns (Percentage Change)')
-    plt.xlabel('Date')
-    plt.ylabel('Monthly Return (%)')
-    plt.legend()
-    plot1_path = os.path.join(plot_dir, 'returns_plot.png')
-    plt.savefig(plot1_path)
-    plt.close()
-
-    # Plot 2: Historical and Forecasted Portfolio Value
-    plt.figure(figsize=(10, 5))
-    historical_portfolio_value.plot(label='Historical Portfolio Value', color='green')
-    forecasted_portfolio_value.plot(label='Forecasted Portfolio Value', color='orange', linestyle='--')
-    plt.title('Historical and Forecasted Portfolio Value')
-    plt.xlabel('Date')
-    plt.ylabel('Portfolio Value (USD)')
-    plt.legend()
-    plot2_path = os.path.join(plot_dir, 'value_plot.png')
-    plt.savefig(plot2_path)
-    plt.close()
-
-    # Return the paths to the saved plots
-    return {"portfolio": weights * initial_amount, "plot1": plot1_path, "plot2": plot2_path}
-
-@app.get("/plots/{plot_name}")
-async def get_plot(plot_name: str):
-    plot_path = os.path.join('plots', plot_name)
-    print(plot_name)
-    if os.path.exists(plot_path):
-        return FileResponse(plot_path, media_type="image/png")
-    else:
-        raise HTTPException(status_code=404, detail="Plot not found")
+    return output

@@ -48,7 +48,7 @@ def mvp(data: pd.DataFrame, l: float):
 
     Args:
         data (pd.DataFrame): The time series data of the assets
-        l (float): The risk coefficient (controls the trade-off between risk and return). A high value of l will result in a more conservative portfolio.
+        l (float): The risk coefficient (controls the trade-off between risk and return). A high value of l will result in a more conservative portfolio. (between 0 and 1)
     """
     # Calculate mean returns and inverse covariance matrix
     mean_returns = data.mean().values
@@ -171,6 +171,49 @@ def srp(data: pd.DataFrame, risk_free_rate: float):
         raise ValueError("Optimization did not converge")
 
     return pd.Series(result.x, index=data.columns)
+
+def portfolio_optimization(returns, risk_tolerance):
+    """
+    Optimize portfolio allocation based on adjustable risk tolerance.
+
+    Parameters:
+        returns (DataFrame): Asset return data (rows: time, cols: assets).
+        risk_tolerance (float): A value between 0 (risk-neutral) and 1 (risk-averse).
+        
+    Returns:
+        dict: Optimal weights, expected return, and risk (standard deviation).
+    """
+    mean_returns = returns.mean()
+    cov_matrix = returns.cov()
+    num_assets = len(mean_returns)
+
+    # Objective function to minimize: negative Sharpe ratio or portfolio variance
+    def objective(weights):
+        port_return = np.dot(weights, mean_returns)
+        port_risk = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+        return -((1 - risk_tolerance) * port_return - risk_tolerance * port_risk)
+
+    # Constraints: Weights sum to 1, and no short-selling (weights >= 0)
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    bounds = tuple((0, 1) for _ in range(num_assets))
+
+    # Initial guess: Equal allocation
+    initial_weights = np.array([1 / num_assets] * num_assets)
+
+    # Minimize the objective function
+    result = minimize(objective, initial_weights, bounds=bounds, constraints=constraints)
+
+    # Calculate results
+    optimal_weights = result.x
+    expected_return = np.dot(optimal_weights, mean_returns)
+    expected_risk = np.sqrt(np.dot(optimal_weights.T, np.dot(cov_matrix, optimal_weights)))
+
+    return {
+        "weights": optimal_weights,
+        "expected_return": expected_return,
+        "expected_risk": expected_risk
+    }
+
 
 # Portfolio Transformer - https://arxiv.org/pdf/2206.03246
 
