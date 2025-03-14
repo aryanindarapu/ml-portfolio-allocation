@@ -5,7 +5,6 @@ import { Bar, Scatter } from 'react-chartjs-2';
 import 'react-datepicker/dist/react-datepicker.css';
 import axios from 'axios';
 
-
 interface Option {
   value: string;
   label: string;
@@ -26,46 +25,72 @@ const riskLevels = [
 
 const Form: React.FC = () => {
   const [amount, setAmount] = useState<number | string>('');
-
   const [selectedStockTickers, setSelectedStockTickers] = useState<Option[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<Option | null>(null);
-  const [runSimulation, setRunSimulation] = useState<boolean>(false);
   const [selectedRiskLevel, setSelectedRiskLevel] = useState<Option | null>(null);
   const [stockOptions, setStockOptions] = useState<Option[]>([]);
-
+  
+  // Errors
   const [amountError, setAmountError] = useState<string | null>(null);
   const [riskLevelError, setRiskLevelError] = useState<string | null>(null);
   const [tickersError, setTickersError] = useState<string | null>(null);
   const [strategyError, setStrategyError] = useState<string | null>(null);
-
+  
+  // Chart Data
   const [barChartData, setBarChartData] = useState<any>(null);
   const [scatterChartData, setScatterChartData] = useState<any>(null);
-
+  
+  // Loading / Overlay state
   const [loading, setLoading] = useState<boolean>(false);
+  const [overlayVisible, setOverlayVisible] = useState<boolean>(false);
+  const [overlayContent, setOverlayContent] = useState<string>('');
+  const [runSimulation, setRunSimulation] = useState<boolean>(false);
 
   useEffect(() => {
     axios.get<string[]>('http://127.0.0.1:8000/tickers')
-      .then(response => {
-        const formattedOptions = response.data.map(item => ({
-          value: item,
-          label: item,
-        }));
-        setStockOptions(formattedOptions);
-      })
-      .catch(error => {
-        console.error('Error fetching tickers:', error);
-      });
+    .then(response => {
+      const formattedOptions = response.data.map(item => ({
+        value: item,
+        label: item,
+      }));
+      setStockOptions(formattedOptions);
+    })
+    .catch(error => {
+      console.error('Error fetching tickers:', error);
+    });
   }, []);
 
   useEffect(() => {
     handleSubmit();
   }, [amount, selectedStockTickers, selectedStrategy, selectedRiskLevel]);
 
-  // const handleSubmit = async (e: React.FormEvent) => {
+  // Update the overlay handler to call the complex workflow endpoint
+  const handleOpenOverlay = async () => {
+    setOverlayVisible(true);
+    setOverlayContent('Loading data...');
+    
+    const formData = {
+      start_date: '2010-01-01',
+      end_date: new Date().toISOString().split('T')[0],
+      initial_amount: parseFloat(amount.toString()),
+      tickers: selectedStockTickers.map((ticker) => ticker.value),
+      strategy: selectedStrategy?.value,
+      risk_level: selectedRiskLevel?.value,
+    };
+
+    try {
+      const response = await axios.post('http://127.0.0.1:8000/run-complex-workflow', formData, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      setOverlayContent(response.data.final_output);
+    } catch (error) {
+      console.error('Error fetching overlay data:', error);
+      setOverlayContent("Error fetching data. Please try again.");
+    }
+  };
+
+  // Form submission for portfolio analysis (for the charts)
   const handleSubmit = async () => {
-    // if (!amount || parseFloat(amount.toString()) <= 0 || selectedStockTickers.length < 2 || !selectedStrategy || !selectedRiskLevel) {
-    //   return;
-    // }
     let valid = true;
     if (!amount || parseFloat(amount.toString()) <= 0) {
       setAmountError('Please enter a valid amount');
@@ -102,7 +127,7 @@ const Form: React.FC = () => {
     setLoading(true);
     const minLoadingTime = 1500;
     const loadingStartTime = Date.now();
-  
+
     const formData = {
       start_date: '2010-01-01',
       end_date: new Date().toISOString().split('T')[0],
@@ -111,7 +136,7 @@ const Form: React.FC = () => {
       strategy: selectedStrategy?.value,
       risk_level: selectedRiskLevel?.value,
     };
-  
+
     try {
       const response = await axios.post('http://127.0.0.1:8000/portfolio-analysis', formData, {
         headers: { 'Content-Type': 'application/json' },
@@ -121,11 +146,13 @@ const Form: React.FC = () => {
       const remainingTime = Math.max(0, minLoadingTime - elapsedTime);
 
       setTimeout(() => {
-        console.log(response.data);
         const responseData = response.data;
 
+        // Prepare bar chart data (portfolio allocation)
         const labels = Object.keys(responseData.weights);
-        const data = Object.values(responseData.weights).map((val) => Math.round((val as number) * 100) / 100);
+        const data = Object.values(responseData.weights).map((val) =>
+          Math.round((val as number) * 100) / 100
+        );
 
         setBarChartData({
           labels,
@@ -139,52 +166,39 @@ const Form: React.FC = () => {
             },
           ],
         });
-        
-        const scatterData = responseData.frontier; // Assuming scatter_data is the (3, n) numpy array from backend
+
+        // Prepare scatter chart data (efficient frontier)
+        const scatterData = responseData.frontier;
         const dataPoints = scatterData[0].map((_: any, i: number) => ({
-          x: scatterData[1][i], // Risk (x-axis)
-          y: scatterData[0][i], // Return (y-axis)
-          r: 3, // Optional: size of the point
-          sharpe: scatterData[2][i], // Sharpe ratio (color value)
+          x: scatterData[1][i], // Return on x-axis
+          y: scatterData[0][i], // Volatility on y-axis
+          r: 3,               // Optional: point size
+          sharpe: scatterData[2][i], // Sharpe ratio
         }));
-        
-        // setScatterChartData({
-        //   datasets: [
-        //     {
-        //       label: 'Efficient Frontier',
-        //       data: dataPoints,
-        //       backgroundColor: dataPoints.map((point: any) =>
-        //         `rgba(${Math.min(255, point.sharpe * 50)}, ${Math.max(255 - point.sharpe * 50, 0)}, 150, 0.6)`
-        //       ),
-        //     },
-        //   ],
-        // });
-        // Function to interpolate between two RGB colors
+
+        // Interpolate colors for scatter chart points
         const interpolateColor = (startColor: [number, number, number], endColor: [number, number, number], ratio: number) => {
           const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * ratio);
           const g = Math.round(startColor[1] + (endColor[1] - startColor[1]) * ratio);
           const b = Math.round(startColor[2] + (endColor[2] - startColor[2]) * ratio);
-          return `rgba(${r}, ${g}, ${b}, 0.6)`; // Alpha set to 0.6 for transparency
+          return `rgba(${r}, ${g}, ${b}, 0.6)`;
         };
 
-        // Define your start and end colors
-        const startColor: [number, number, number] = [255, 255, 0]; // Yellow (R, G, B)
+        const startColor: [number, number, number] = [255, 255, 0]; // Yellow
         const endColor: [number, number, number] = [109, 40, 217];
 
-        // Generate the scatter chart dataset
         setScatterChartData({
           datasets: [
             {
               label: 'Efficient Frontier',
               data: dataPoints,
               backgroundColor: dataPoints.map((point: any) =>
-                interpolateColor(startColor, endColor, Math.min(1, Math.max(0, point.sharpe))) // Clamp ratio to [0, 1]
+                interpolateColor(startColor, endColor, Math.min(1, Math.max(0, point.sharpe)))
               ),
             },
           ],
         });
 
-        
         setLoading(false);
       }, remainingTime);
     } catch (error) {
@@ -192,7 +206,7 @@ const Form: React.FC = () => {
       setLoading(false);
     }
   };
-    
+
   return (
     <form className="space-y-4">
       <div className="flex space-x-4">
@@ -232,7 +246,7 @@ const Form: React.FC = () => {
         <div className="flex-1">
           <label className="block mb-2">Run Simulation:</label>
           <div
-            className={`relative w-12 h-6 flex items-center bg-gray-300 rounded-full cursor-pointer ${
+            className={`relative w-12 h-6 flex items-center rounded-full cursor-pointer ${
               runSimulation ? 'bg-violet-700' : 'bg-gray-300'
             }`}
             onClick={() => setRunSimulation(!runSimulation)}
@@ -245,7 +259,7 @@ const Form: React.FC = () => {
           </div>
         </div>
       </div>
-      <div className="flex space-x-4">
+      <div className="flex space-x-4 items-center">
         <div className="flex-1">
           <label className="block">Stock Tickers:</label>
           <Select
@@ -257,14 +271,41 @@ const Form: React.FC = () => {
           />
           {tickersError && <p className="text-red-500">{tickersError}</p>}
         </div>
+        <div className="flex-2 flex items-center">
+          <button
+            type="button"
+            className="bg-violet-700 text-white p-2 rounded"
+            onClick={handleOpenOverlay}
+          >
+            What does this mean?
+          </button>
+        </div>
       </div>
+
+      {overlayVisible && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-4 rounded shadow-lg relative max-w-2xl mx-auto">
+            <button
+              className="absolute top-2 right-2 text-gray-500"
+              onClick={() => setOverlayVisible(false)}
+            >
+              &times;
+            </button>
+            <div className="p-4">
+              <h2 className="text-xl font-bold mb-2">Portfolio Insights</h2>
+              <p>{overlayContent}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading && (
         <div className="flex justify-center items-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-violet-500 border-solid border-opacity-50"></div>
-          <p className="ml-3 text-center">Loading...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-t-4 border-violet-500"></div>
+          <p className="ml-3">Loading...</p>
         </div>
-        
       )}
+      
       {barChartData && (
         <div className="bar-chart-container">
           <Bar
@@ -272,13 +313,8 @@ const Form: React.FC = () => {
             options={{
               responsive: true,
               plugins: {
-                legend: {
-                  position: 'top',
-                },
-                title: {
-                  display: true,
-                  text: 'Portfolio Allocation by Ticker',
-                },
+                legend: { position: 'top' },
+                title: { display: true, text: 'Portfolio Allocation by Ticker' },
               },
             }}
           />
@@ -291,17 +327,10 @@ const Form: React.FC = () => {
             options={{
               responsive: true,
               scales: {
-                x: {
-                  title: { display: true, text: 'Risk (Volatility)' },
-                },
-                y: {
-                  title: { display: true, text: 'Return' },
-                },
+                x: { title: { display: true, text: 'Risk (Volatility)' } },
+                y: { title: { display: true, text: 'Return' } },
               },
               plugins: {
-                datalabels: {
-                  display: false,
-                },
                 tooltip: {
                   callbacks: {
                     label: (context) => {
@@ -310,21 +339,14 @@ const Form: React.FC = () => {
                     },
                   },
                 },
-                title: {
-                  display: true,
-                  text: 'Efficient Frontier',
-                },
-                legend: {
-                  display: false,
-                },
+                title: { display: true, text: 'Efficient Frontier' },
+                legend: { display: false },
               },
             }}
           />
         </div>
       )}
-
     </form>
-
   );
 };
 
