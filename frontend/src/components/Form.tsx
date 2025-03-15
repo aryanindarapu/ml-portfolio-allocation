@@ -23,6 +23,14 @@ const riskLevels = [
   { value: 'very_high', label: 'Very High' },
 ];
 
+function reformatForHtmlOverlay(text: string) {
+  // Convert markdown bold markers to <strong> tags.
+  let html = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  // Replace newline characters with <br> tags.
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
 const Form: React.FC = () => {
   const [amount, setAmount] = useState<number | string>('');
   const [selectedStockTickers, setSelectedStockTickers] = useState<Option[]>([]);
@@ -82,7 +90,8 @@ const Form: React.FC = () => {
       const response = await axios.post('http://127.0.0.1:8000/run-complex-workflow', formData, {
         headers: { 'Content-Type': 'application/json' },
       });
-      setOverlayContent(response.data.final_output);
+      const formattedOutput = reformatForHtmlOverlay(response.data.final_output);
+      setOverlayContent(formattedOutput);
     } catch (error) {
       console.error('Error fetching overlay data:', error);
       setOverlayContent("Error fetching data. Please try again.");
@@ -284,7 +293,7 @@ const Form: React.FC = () => {
 
       {overlayVisible && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-white p-4 rounded shadow-lg relative max-w-2xl mx-auto">
+          <div className="bg-white p-4 rounded shadow-lg relative max-w-[80vw] max-h-[80vh] overflow-auto">
             <button
               className="absolute top-2 right-2 text-gray-500"
               onClick={() => setOverlayVisible(false)}
@@ -293,7 +302,7 @@ const Form: React.FC = () => {
             </button>
             <div className="p-4">
               <h2 className="text-xl font-bold mb-2">Portfolio Insights</h2>
-              <p>{overlayContent}</p>
+              <p dangerouslySetInnerHTML={{ __html: overlayContent }}></p>
             </div>
           </div>
         </div>

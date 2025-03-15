@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 import requests
 from bs4 import BeautifulSoup
@@ -12,7 +12,8 @@ import yfinance as yf
 import numpy as np
 
 # Import our agents module
-from agents import Agent, Runner, trace
+from agents import Agent, Runner, trace, OutputGuardrailTripwireTriggered, RunContextWrapper, GuardrailFunctionOutput, output_guardrail
+from agents.tool import function_tool
 
 # Your existing quant imports (assumed to be in your project)
 from quant.strategies import mvp, rpp, portfolio_optimization
@@ -68,7 +69,6 @@ async def get_tickers():
 
 def risk_adjusted_portfolio(tickers, start_date, end_date, target_vol):
     data = yf.download(tickers, start=start_date, end=end_date, auto_adjust=True)['Close']
-    print(data)
     returns = np.log(data / data.shift(1)).dropna()
     mean_returns = returns.mean() * 252
     cov_matrix = returns.cov() * 252
@@ -135,55 +135,6 @@ async def run_portfolio_analysis(request: DataRequest):
     
     return output
 
-@app.post('/run-explanation-agents')
-async def run_explanation_agents(request: DataRequest):
-    # Use the risk-adjusted portfolio function to get the allocation summary.
-    risk_map = {"very_low": 0.15, "low": 0.25, "medium": 0.31, "high": 0.375, "very_high": 0.45}
-    if request.risk_level not in risk_map:
-        raise HTTPException(status_code=400, detail="Invalid risk level provided")
-    l = risk_map[request.risk_level]
-
-    weights, _ = risk_adjusted_portfolio(request.tickers, request.start_date, request.end_date, l)
-    allocation_summary = f"Portfolio allocation weights: {dict(zip(request.tickers, weights))}"
-
-    with trace("Ticker Suggestion Agent"):
-        ticker_agent = Agent(
-            name="ticker_suggestion_agent",
-            instructions="Based on the provided portfolio allocation, suggest additional tickers to boost potential returns."
-        )
-        ticker_suggestions = await Runner.run(ticker_agent, allocation_summary)
-    
-    return {"ticker_suggestions": ticker_suggestions}
-
-@app.post('/run-efficient-frontier-agent')
-async def run_efficient_frontier_agent(request: DataRequest):
-    risk_map = {"very_low": 0.15, "low": 0.25, "medium": 0.31, "high": 0.375, "very_high": 0.45}
-    if request.risk_level not in risk_map:
-        raise HTTPException(status_code=400, detail="Invalid risk level provided")
-    l = risk_map[request.risk_level]
-
-    weights, _ = risk_adjusted_portfolio(request.tickers, request.start_date, request.end_date, l)
-    allocation_summary = f"Optimized portfolio allocation weights: {dict(zip(request.tickers, weights))}"
-
-    with trace("Portfolio Optimizer Agent"):
-        optimizer_agent = Agent(
-            name="portfolio_optimizer_agent",
-            instructions="Generate the best portfolio allocation based on the optimization numbers."
-        )
-        optimized_allocation = await Runner.run(optimizer_agent, allocation_summary)
-    
-    with trace("Efficient Frontier Explanation Agent"):
-        explainer_agent = Agent(
-            name="efficient_frontier_explainer_agent",
-            instructions="Explain the efficient frontier concept and why this allocation lies on it."
-        )
-        explanation = await Runner.run(explainer_agent, optimized_allocation)
-    
-    return {
-        "optimized_allocation": optimized_allocation,
-        "efficient_frontier_explanation": explanation
-    }
-
 @app.post('/run-help-agent')
 async def run_help_agent(request: DataRequest):
     # Here we assume the "strategy" field holds a help question.
@@ -196,6 +147,22 @@ async def run_help_agent(request: DataRequest):
         help_response = await Runner.run(help_agent, query)
     
     return {"help_response": help_response}
+
+class AllocationOutput(BaseModel):
+    allocation: str = Field(..., description="Optimized portfolio allocation as text")
+
+@output_guardrail
+async def allocation_output_guardrail(
+    context: RunContextWrapper, agent: Agent, output: AllocationOutput
+) -> GuardrailFunctionOutput:
+    # In this example, we check that the allocation text is nonempty and has a minimum length.
+    trigger = len(output.allocation.strip()) < 10
+    return GuardrailFunctionOutput(
+        output_info={"allocation_too_short": trigger},
+        tripwire_triggered=trigger,
+    )
+
+wahoo = ""
 
 @app.post('/run-complex-workflow')
 async def run_complex_workflow(request: DataRequest):
@@ -211,32 +178,49 @@ async def run_complex_workflow(request: DataRequest):
     l = risk_map[request.risk_level]
     
     # --- Step 1: Compute the Basic Portfolio Allocation ---
-    weights, _ = risk_adjusted_portfolio(request.tickers, request.start_date, request.end_date, l)
+    weights, frontier = risk_adjusted_portfolio(request.tickers, request.start_date, request.end_date, l)
     allocation_summary = f"Optimized portfolio allocation weights: {dict(zip(request.tickers, weights))}"
-    
-    # --- Step 2: Iterative Optimization & Evaluation ---
+
+    # --- Step 2: Iterative Optimization & Evaluation with Output Guardrail ---
+    # Define the portfolio optimizer agent with an output guardrail.
     optimizer_agent = Agent(
         name="portfolio_optimizer_agent",
-        instructions="Generate the best portfolio allocation based on the optimization numbers."
+        instructions="Generate the best portfolio allocation based on the optimization numbers.",
+        output_type=AllocationOutput,
+        output_guardrails=[allocation_output_guardrail],
     )
     evaluator_agent = Agent(
         name="evaluator_agent",
-        instructions="Evaluate the given portfolio allocation. Return 'pass' if it meets quality standards, else 'needs_improvement: <feedback>'."
+        instructions=(
+            "Evaluate the given portfolio allocation. Return 'pass' if it meets quality standards, "
+            "else 'needs_improvement: <feedback>'."
+        ),
     )
     
     max_iterations = 3
     iteration = 0
+    # Start with the allocation summary as a plain string.
     optimized_allocation = allocation_summary
     evaluator_response = ""
     
-    while iteration < max_iterations:
+    while iteration < max_iterations:        
         with trace(f"Portfolio Optimizer Agent Iteration {iteration+1}"):
-            optimized_allocation = await Runner.run(optimizer_agent, optimized_allocation)
+            try:
+                # Call the optimizer agent and convert its output using our output type guardrail.
+                optimizer_result = await Runner.run(optimizer_agent, optimized_allocation)
+                # The agent's result is now an AllocationOutput; extract the text.
+                optimized_allocation = optimizer_result.final_output_as(AllocationOutput).allocation
+            except OutputGuardrailTripwireTriggered as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Portfolio optimizer output guardrail triggered: {e.guardrail_result.output.output_info}"
+                )
         
         with trace("Evaluator Agent"):
-            evaluator_response = await Runner.run(evaluator_agent, optimized_allocation)
+            evaluator_result = await Runner.run(evaluator_agent, optimized_allocation)
+            evaluator_response = evaluator_result.final_output_as(str)
         
-        # If evaluator returns "pass", we consider the output acceptable.
+        # If evaluator returns "pass", the output is acceptable.
         if "pass" in evaluator_response.lower():
             break
         else:
@@ -244,36 +228,61 @@ async def run_complex_workflow(request: DataRequest):
             optimized_allocation += f" | Feedback: {evaluator_response}"
         iteration += 1
     
-    # --- Output Guardrail ---
+
+    # --- Output Guardrail Check ---
     if "pass" not in evaluator_response.lower():
-        raise HTTPException(status_code=500, detail="Optimized allocation did not meet quality standards after multiple iterations.")
+        print("passed")
+        raise HTTPException(
+            status_code=500,
+            detail="Optimized allocation did not meet quality standards after multiple iterations."
+        )
     
     # --- Step 3: Run Additional Agents ---
     with trace("Ticker Suggestion Agent"):
         ticker_agent = Agent(
             name="ticker_suggestion_agent",
-            instructions="Based on the provided portfolio allocation, suggest additional tickers to boost potential returns."
+            instructions=(
+                "Based on the provided portfolio allocation and risk level, suggest 3 additional tickers "
+                "to boost potential returns based on the current real-time news. It's okay to include any type of company (i.e. small, mid, or large cap)."
+            )
         )
-        ticker_suggestions = await Runner.run(ticker_agent, optimized_allocation)
+        ticker_result = await Runner.run(ticker_agent, optimized_allocation)
+        ticker_suggestions = ticker_result.final_output_as(str)
     
     with trace("Efficient Frontier Explanation Agent"):
         explainer_agent = Agent(
             name="efficient_frontier_explainer_agent",
-            instructions="Explain the efficient frontier concept and its significance for this portfolio allocation."
+            instructions=(
+                "Provide a financial analysis of the input efficient frontier data."
+                "Explain how it's useful for portfolio optimization."
+            ),
         )
-        explanation = await Runner.run(explainer_agent, optimized_allocation)
+        
+        print(frontier)
+        explainer_result = await Runner.run(
+            explainer_agent, 
+            "Here is the efficient frontier data: {frontier}".format(frontier=frontier[::4].tolist())
+        )
+        explanation = explainer_result.final_output_as(str)
     
-    # --- Step 4: Synthesize Final Output & Output Guardrail ---
+    # --- Step 4: Synthesize Final Output & Final Output Guardrail ---
     final_output = (
         f"Final Optimized Allocation:\n{optimized_allocation}\n\n"
         f"Ticker Suggestions:\n{ticker_suggestions}\n\n"
         f"Efficient Frontier Explanation:\n{explanation}"
     )
-    
+        
     if not final_output.strip():
-        raise HTTPException(status_code=500, detail="Final output guardrail triggered: Empty output.")
-    
+        raise HTTPException(
+            status_code=500,
+            detail="Final output guardrail triggered: Empty output."
+        )
+        
     return {"final_output": final_output}
+
+@app.post('/run-complex-workflow-fake')
+async def run_complex_workflow_fake(request: DataRequest):
+    return {"final_output": wahoo}
 
 if __name__ == "__main__":
     import uvicorn
