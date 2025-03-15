@@ -15,3 +15,6 @@ Additionally, the following asset return models are implemented:
 
 ### Update: Nov 29, 2024
 - The project now has a React frontend and FastAPI backend.
+
+### Update Mar 15, 2025
+- Added OpenAI Agents for easy and customized explanations of the data
