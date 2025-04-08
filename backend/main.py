@@ -162,8 +162,6 @@ async def allocation_output_guardrail(
         tripwire_triggered=trigger,
     )
 
-wahoo = ""
-
 @app.post('/run-complex-workflow')
 async def run_complex_workflow(request: DataRequest):
     # --- Input Guardrails ---
@@ -279,10 +277,6 @@ async def run_complex_workflow(request: DataRequest):
         )
         
     return {"final_output": final_output}
-
-@app.post('/run-complex-workflow-fake')
-async def run_complex_workflow_fake(request: DataRequest):
-    return {"final_output": wahoo}
 
 if __name__ == "__main__":
     import uvicorn
